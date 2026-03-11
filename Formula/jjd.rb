@@ -7,20 +7,20 @@ class Jjd < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/wsoule/jjd/releases/download/v#{version}/jjd-darwin-arm64.tar.gz"
-      sha256 "PLACEHOLDER"
+      sha256 "f2cf657aafb8c8b535c5487d7c92e63f59b35a1a36025f94b79e9e4b818b63fd"
     else
       url "https://github.com/wsoule/jjd/releases/download/v#{version}/jjd-darwin-x64.tar.gz"
-      sha256 "PLACEHOLDER"
+      sha256 "27b0948ae4acea746ec48d351316f19b1da376876437fc9fa1b6bee89cd30c76"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/wsoule/jjd/releases/download/v#{version}/jjd-linux-arm64.tar.gz"
-      sha256 "PLACEHOLDER"
+      sha256 "e1e962e60b906adfb62c24932587c5d96dbdf600b96663d2413e2224964847b3"
     else
       url "https://github.com/wsoule/jjd/releases/download/v#{version}/jjd-linux-x64.tar.gz"
-      sha256 "PLACEHOLDER"
+      sha256 "5d1d29b55302a9ab3473f11474e6eb1ca841b2b4a58341ee60177d967a4f1b1f"
     end
   end
 

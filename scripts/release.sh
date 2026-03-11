@@ -38,49 +38,45 @@ for target in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
   tar -czf "$DIST/jjd-${target}.tar.gz" -C "$DIST/jjd-${target}" jjd
 done
 
-# Compute SHA256s
+# Compute SHA256s (individual vars — compatible with bash 3.2 on macOS)
 echo "==> SHA256 checksums"
-declare -A SHAS
-for target in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-  SHA=$(shasum -a 256 "$DIST/jjd-${target}.tar.gz" | awk '{print $1}')
-  SHAS[$target]="$SHA"
-  echo "  ${target}: ${SHA}"
-done
+SHA_DARWIN_ARM64=$(shasum -a 256 "$DIST/jjd-darwin-arm64.tar.gz" | awk '{print $1}')
+SHA_DARWIN_X64=$(shasum -a 256 "$DIST/jjd-darwin-x64.tar.gz"    | awk '{print $1}')
+SHA_LINUX_ARM64=$(shasum -a 256 "$DIST/jjd-linux-arm64.tar.gz"  | awk '{print $1}')
+SHA_LINUX_X64=$(shasum -a 256   "$DIST/jjd-linux-x64.tar.gz"   | awk '{print $1}')
+echo "  darwin-arm64: ${SHA_DARWIN_ARM64}"
+echo "  darwin-x64:   ${SHA_DARWIN_X64}"
+echo "  linux-arm64:  ${SHA_LINUX_ARM64}"
+echo "  linux-x64:    ${SHA_LINUX_X64}"
 
-# Update formula
+# Update formula — version + 4 sha256 lines in order: darwin-arm64, darwin-x64, linux-arm64, linux-x64
 echo "==> Updating Formula/jjd.rb"
 FORMULA="Formula/jjd.rb"
 sed -i '' "s/version \".*\"/version \"${VERSION}\"/" "$FORMULA"
 
-# Update SHAs in order: darwin-arm64, darwin-x64, linux-arm64, linux-x64
-# The formula has 4 sha256 lines in platform order
-python3 -c "
+python3 - <<PYEOF
 import re
 
-with open('$FORMULA') as f:
+with open('${FORMULA}') as f:
     content = f.read()
 
-shas = {
-    'darwin-arm64': '${SHAS[darwin-arm64]}',
-    'darwin-x64': '${SHAS[darwin-x64]}',
-    'linux-arm64': '${SHAS[linux-arm64]}',
-    'linux-x64': '${SHAS[linux-x64]}',
-}
+shas = [
+    '${SHA_DARWIN_ARM64}',
+    '${SHA_DARWIN_X64}',
+    '${SHA_LINUX_ARM64}',
+    '${SHA_LINUX_X64}',
+]
 
-# Replace sha256 placeholders/values in order of appearance
-sha_pattern = r'sha256 \"[a-fA-F0-9]+\"|sha256 \"PLACEHOLDER\"'
+sha_pattern = r'sha256 "[a-fA-F0-9]+"|sha256 "PLACEHOLDER"'
 matches = list(re.finditer(sha_pattern, content))
 
-# Order in formula: darwin-arm64, darwin-x64, linux-arm64, linux-x64
-order = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64']
-for i, key in enumerate(order):
+for i, sha in enumerate(shas):
     if i < len(matches):
-        old = matches[i].group()
-        content = content.replace(old, f'sha256 \"{shas[key]}\"', 1)
+        content = content.replace(matches[i].group(), f'sha256 "{sha}"', 1)
 
-with open('$FORMULA', 'w') as f:
+with open('${FORMULA}', 'w') as f:
     f.write(content)
-"
+PYEOF
 
 echo "==> Creating GitHub release ${TAG}"
 gh release create "$TAG" \
