@@ -1,0 +1,15 @@
+{
+  "debounceMs": 5000,
+  "pushIdleMs": 30000,
+  "watcher": "fs",
+  "pollIntervalMs": 2000,
+  "model": "claude-haiku-4-5-20251001",
+  "autoPush": true,
+  "checkpoints": true,
+  "apiPort": 7433,
+  "bookmarkPatterns": [
+    { "pattern": "feat/*", "autoAdvance": true },
+    { "pattern": "fix/*", "autoAdvance": true }
+  ],
+  "ignorePaths": ["node_modules", ".next", "dist", "*.log"]
+}

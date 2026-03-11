@@ -1,0 +1,23 @@
+node_modules/
+dist/
+
+# SQLite state files
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Compiled binaries
+jjd
+jjd-darwin-arm64
+jjd-darwin-x64
+jjd-linux-x64
+jjd-linux-arm64
+
+# Session data
+.jjd-sessions/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
