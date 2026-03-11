@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
-const VERSION = "0.1.0";
+// @ts-ignore: outside rootDir but Bun bundles package.json into the compiled binary
+import { version as VERSION } from "../package.json";
 
 import { Daemon } from "./daemon";
 import { JjOperations } from "./jj/operations";

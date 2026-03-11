@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create GitHub releases
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: macos-latest # required for codesign
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build all targets
+        run: |
+          mkdir -p dist/release
+
+          bun build src/index.ts --compile --target=bun-darwin-arm64 \
+            --outfile dist/release/jjd-darwin-arm64/jjd
+          bun build src/index.ts --compile --target=bun-darwin-x64 \
+            --outfile dist/release/jjd-darwin-x64/jjd
+          bun build src/index.ts --compile --target=bun-linux-x64 \
+            --outfile dist/release/jjd-linux-x64/jjd
+          bun build src/index.ts --compile --target=bun-linux-arm64 \
+            --outfile dist/release/jjd-linux-arm64/jjd
+
+          # Ad-hoc codesign macOS binaries (prevents Gatekeeper quarantine)
+          codesign --force --sign - dist/release/jjd-darwin-arm64/jjd
+          codesign --force --sign - dist/release/jjd-darwin-x64/jjd
+          xattr -cr dist/release/jjd-darwin-arm64/jjd
+          xattr -cr dist/release/jjd-darwin-x64/jjd
+
+          # Package each binary as a tarball (jjd at root, no subdirectory)
+          for target in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            tar -czf "dist/release/jjd-${target}.tar.gz" \
+              -C "dist/release/jjd-${target}" jjd
+          done
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" \
+            dist/release/jjd-darwin-arm64.tar.gz \
+            dist/release/jjd-darwin-x64.tar.gz \
+            dist/release/jjd-linux-x64.tar.gz \
+            dist/release/jjd-linux-arm64.tar.gz \
+            --title "jjd v${VERSION}" \
+            --generate-notes
+
+      - name: Update homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Compute SHA256s and export so Python can read them via os.environ
+          export SHA_DARWIN_ARM64=$(shasum -a 256 dist/release/jjd-darwin-arm64.tar.gz | awk '{print $1}')
+          export SHA_DARWIN_X64=$(shasum -a 256   dist/release/jjd-darwin-x64.tar.gz   | awk '{print $1}')
+          export SHA_LINUX_ARM64=$(shasum -a 256  dist/release/jjd-linux-arm64.tar.gz  | awk '{print $1}')
+          export SHA_LINUX_X64=$(shasum -a 256    dist/release/jjd-linux-x64.tar.gz    | awk '{print $1}')
+
+          echo "darwin-arm64: $SHA_DARWIN_ARM64"
+          echo "darwin-x64:   $SHA_DARWIN_X64"
+          echo "linux-arm64:  $SHA_LINUX_ARM64"
+          echo "linux-x64:    $SHA_LINUX_X64"
+
+          # Clone tap
+          git clone \
+            "https://x-access-token:${TAP_TOKEN}@github.com/wsoule/homebrew-tap.git" \
+            /tmp/tap
+
+          # Update Formula/jjd.rb — version + 4 sha256 lines in order:
+          # darwin-arm64, darwin-x64, linux-arm64, linux-x64
+          # Quoted heredoc (<<'PYEOF') so bash does NOT expand Python's $ variables;
+          # Python reads all values from os.environ instead.
+          python3 - <<'PYEOF'
+import re, os
+
+VERSION          = os.environ['VERSION']
+SHA_DARWIN_ARM64 = os.environ['SHA_DARWIN_ARM64']
+SHA_DARWIN_X64   = os.environ['SHA_DARWIN_X64']
+SHA_LINUX_ARM64  = os.environ['SHA_LINUX_ARM64']
+SHA_LINUX_X64    = os.environ['SHA_LINUX_X64']
+
+shas = [SHA_DARWIN_ARM64, SHA_DARWIN_X64, SHA_LINUX_ARM64, SHA_LINUX_X64]
+
+formula = '/tmp/tap/Formula/jjd.rb'
+with open(formula) as f:
+    content = f.read()
+
+content = re.sub(r'version "[^"]*"', f'version "{VERSION}"', content)
+
+matches = list(re.finditer(r'sha256 "[a-fA-F0-9]+"', content))
+for i, sha in enumerate(shas):
+    if i < len(matches):
+        content = content.replace(matches[i].group(), f'sha256 "{sha}"', 1)
+
+with open(formula, 'w') as f:
+    f.write(content)
+
+print(f"Formula updated to v{VERSION}")
+PYEOF
+
+          # Commit and push tap
+          cd /tmp/tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/jjd.rb
+          git diff --staged --quiet || git commit -m "jjd v${VERSION}"
+          git push
