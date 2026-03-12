@@ -18,28 +18,31 @@ Examples:
 - fix: prevent crash when config file is missing
 - refactor(api): simplify request validation middleware`;
 
-const SCOPE_CHECK_PROMPT = `You are a commit scope analyzer. You will be given the CURRENT commit description and a NEW diff that represents all changes in the working copy.
+const SCOPE_CHECK_PROMPT = `You are a commit scope analyzer. You receive a CURRENT commit description and a file-change summary listing every modified file.
 
-Your job: decide whether the new diff has grown beyond the scope of the current commit description. A scope change means the developer has moved on to a logically different unit of work — not just expanding the same feature.
+Your job: decide if the working copy has grown beyond the current commit's scope. The PRIMARY signal is FILE PATHS — different directories, layers, or subsystems are strong evidence of a scope change.
 
-Examples of SAME scope (no split):
-- Current: "feat(auth): add login form" → diff adds validation to the same login form
-- Current: "fix(api): handle null response" → diff adds a test for the same fix
-- Current: "chore: update dependencies" → diff updates more dependencies
+Strong signals for a NEW scope (split):
+- Files span different architectural layers: API/backend files alongside UI/frontend files
+  e.g. "src/api/users.ts" + "src/components/UserList.tsx" → split
+- Files are in unrelated subsystems or features
+  e.g. "src/auth/login.ts" + "src/billing/invoice.ts" → split
+- Files mix infrastructure with product code
+  e.g. "docker-compose.yml" + "src/features/search.ts" → split
 
-Examples of NEW scope (split):
-- Current: "feat(auth): add login form" → diff now also refactors the dashboard layout
-- Current: "fix(api): handle null response" → diff now adds a completely new API endpoint
-- Current: "chore: update dependencies" → diff now fixes a bug in the payment module
+Weak signals (usually same scope, don't split):
+- Tests added alongside the code they test
+- Types/interfaces added alongside their implementation
+- Related files within the same directory or module
 
-The diff summary will list changed files with their status (A/M/D/R). Use the file paths exactly as shown.
+When uncertain, prefer splitting — it is always better to have too many commits than too few.
 
 Respond with ONLY a JSON object (no markdown, no backticks):
 - No split: {"split": false}
-- Split: {"split": true, "reason": "brief explanation", "oldScopeFiles": ["path/to/file1", "path/to/file2"], "newScopeFiles": ["path/to/file3"]}
+- Split: {"split": true, "reason": "brief explanation", "oldScopeFiles": ["path/to/file1"], "newScopeFiles": ["path/to/file2"]}
 
-oldScopeFiles = files that belong to the CURRENT commit description's scope.
-newScopeFiles = files that represent the NEW, different unit of work.
+oldScopeFiles = files that belong to the CURRENT description's scope.
+newScopeFiles = files representing the NEW, different unit of work.
 Every changed file must appear in exactly one list.`;
 
 export interface DescribeResult {
@@ -92,6 +95,10 @@ export class AutoDescriber {
   /**
    * Generate a commit message AND check if the scope has shifted
    * from the current description. If so, recommends a split (jj new).
+   *
+   * The scope check receives only the diff summary (file paths) — not the
+   * full diff — because paths are the primary signal for scope changes and
+   * code content is noise for this task.
    */
   async generateWithScopeCheck(
     diff: string,
@@ -108,6 +115,9 @@ export class AutoDescriber {
     }
 
     logger.debug("Generating commit message with scope check");
+
+    // Extract just the file summary for scope checking (first section of diff output)
+    const summary = extractSummary(diff);
 
     try {
       // Run both calls in parallel
@@ -130,7 +140,7 @@ export class AutoDescriber {
           messages: [
             {
               role: "user",
-              content: `CURRENT DESCRIPTION:\n${currentDescription}\n\nNEW DIFF:\n${diff}`,
+              content: `CURRENT DESCRIPTION:\n${currentDescription}\n\nCHANGED FILES:\n${summary}`,
             },
           ],
         }),
@@ -189,4 +199,14 @@ function cleanMessage(text: string): string {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^commit message:\s*/i, "")
     .trim();
+}
+
+/**
+ * Extract the file-change summary from the combined diff string.
+ * The diff() method returns "Summary:\n<paths>\n\nFull diff:\n<code>".
+ * We want only the paths — they're the signal for scope detection.
+ */
+function extractSummary(diff: string): string {
+  const match = diff.match(/^Summary:\n([\s\S]*?)(?:\n\nFull diff:|$)/);
+  return match ? match[1].trim() : diff.split("\n").slice(0, 20).join("\n");
 }
