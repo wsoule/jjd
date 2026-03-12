@@ -516,7 +516,7 @@ async function cmdSession(
 
 // -- Workspace detection --
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, appendFileSync } from "fs";
 import { join } from "path";
 import { loadConfig } from "./config";
 
@@ -555,6 +555,42 @@ function findSessionMarker(dir: string): SessionMarker | null {
 }
 
 // -- Init --
+
+const JJD_GITIGNORE_ENTRIES = [
+  ".jjd-sessions/",   // session metadata (JSON files per session)
+  ".jjd-session",     // workspace marker written by jjd session start
+  ".jjd-task-prompt", // task prompt injected into Claude at session start
+  ".jjd.log",         // daemon log created by WorktreeCreate hook
+];
+
+function updateGitignore(repoPath: string) {
+  const gitignorePath = join(repoPath, ".gitignore");
+
+  const existing = existsSync(gitignorePath)
+    ? readFileSync(gitignorePath, "utf-8")
+    : "";
+
+  const missing = JJD_GITIGNORE_ENTRIES.filter(
+    (entry) => !existing.split("\n").some((line) => line.trim() === entry)
+  );
+
+  if (missing.length === 0) {
+    console.log("  ✓ .gitignore already up to date");
+    return;
+  }
+
+  const block =
+    (existing.length > 0 && !existing.endsWith("\n") ? "\n" : "") +
+    "# jjd\n" +
+    missing.join("\n") +
+    "\n";
+
+  appendFileSync(gitignorePath, block);
+
+  for (const entry of missing) {
+    console.log(`  ✓ added ${entry}`);
+  }
+}
 
 async function cmdInit(repoPath: string) {
   const { exec } = await import("./util/process");
@@ -636,6 +672,10 @@ async function cmdInit(repoPath: string) {
   ok("WorktreeCreate / WorktreeRemove hooks installed");
   ok("jjd will auto-start when Claude opens a worktree");
   console.log(`    (${join(repoPath, ".claude", "settings.json")})`);
+
+  // ── .gitignore ────────────────────────────────────────────────────────────
+  console.log("\n.gitignore:");
+  updateGitignore(repoPath);
 
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`
