@@ -1,6 +1,6 @@
 {
   "name": "jjd",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Jujutsu (jj) automation daemon — auto-describe, bookmark, and push with AI",
   "type": "module",
   "bin": {
