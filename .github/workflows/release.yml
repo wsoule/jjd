@@ -71,56 +71,20 @@ jobs:
         env:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
+          SHA_DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
         run: |
-          # Compute SHA256s and export so Python can read them via os.environ
           export SHA_DARWIN_ARM64=$(shasum -a 256 dist/release/jjd-darwin-arm64.tar.gz | awk '{print $1}')
           export SHA_DARWIN_X64=$(shasum -a 256   dist/release/jjd-darwin-x64.tar.gz   | awk '{print $1}')
           export SHA_LINUX_ARM64=$(shasum -a 256  dist/release/jjd-linux-arm64.tar.gz  | awk '{print $1}')
           export SHA_LINUX_X64=$(shasum -a 256    dist/release/jjd-linux-x64.tar.gz    | awk '{print $1}')
 
-          echo "darwin-arm64: $SHA_DARWIN_ARM64"
-          echo "darwin-x64:   $SHA_DARWIN_X64"
-          echo "linux-arm64:  $SHA_LINUX_ARM64"
-          echo "linux-x64:    $SHA_LINUX_X64"
-
-          # Clone tap
           git clone \
             "https://x-access-token:${TAP_TOKEN}@github.com/wsoule/homebrew-tap.git" \
             /tmp/tap
 
-          # Update Formula/jjd.rb — version + 4 sha256 lines in order:
-          # darwin-arm64, darwin-x64, linux-arm64, linux-x64
-          # Quoted heredoc (<<'PYEOF') so bash does NOT expand Python's $ variables;
-          # Python reads all values from os.environ instead.
-          python3 - <<'PYEOF'
-import re, os
+          export FORMULA_PATH=/tmp/tap/Formula/jjd.rb
+          python3 .github/scripts/update-formula.py
 
-VERSION          = os.environ['VERSION']
-SHA_DARWIN_ARM64 = os.environ['SHA_DARWIN_ARM64']
-SHA_DARWIN_X64   = os.environ['SHA_DARWIN_X64']
-SHA_LINUX_ARM64  = os.environ['SHA_LINUX_ARM64']
-SHA_LINUX_X64    = os.environ['SHA_LINUX_X64']
-
-shas = [SHA_DARWIN_ARM64, SHA_DARWIN_X64, SHA_LINUX_ARM64, SHA_LINUX_X64]
-
-formula = '/tmp/tap/Formula/jjd.rb'
-with open(formula) as f:
-    content = f.read()
-
-content = re.sub(r'version "[^"]*"', f'version "{VERSION}"', content)
-
-matches = list(re.finditer(r'sha256 "[a-fA-F0-9]+"', content))
-for i, sha in enumerate(shas):
-    if i < len(matches):
-        content = content.replace(matches[i].group(), f'sha256 "{sha}"', 1)
-
-with open(formula, 'w') as f:
-    f.write(content)
-
-print(f"Formula updated to v{VERSION}")
-PYEOF
-
-          # Commit and push tap
           cd /tmp/tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
