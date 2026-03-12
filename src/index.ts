@@ -40,6 +40,7 @@ Usage:
   jjd checkpoint [msg]               Create a rollback checkpoint
   jjd rollback <id>                  Rollback to a checkpoint
   jjd checkpoints                    List checkpoints
+  jjd ui                             Open the web dashboard in your browser
   jjd init                           One-time setup: check deps, install hooks
   jjd version                        Print version
   jjd help                           Show this help
@@ -153,6 +154,8 @@ async function main() {
       return cmdRollback(apiPort, args[1]);
     case "checkpoints":
       return cmdListCheckpoints(apiPort);
+    case "ui":
+      return cmdUi(apiPort);
     case "init":
       return cmdInit(repoPath);
     case "version":
@@ -552,6 +555,16 @@ function findSessionMarker(dir: string): SessionMarker | null {
     return findSessionMarker(parent);
   }
   return null;
+}
+
+// -- UI --
+
+async function cmdUi(apiPort: number) {
+  const url = `http://localhost:${apiPort}`;
+  const { exec } = await import("./util/process");
+  const opener = process.platform === "darwin" ? "open" : "xdg-open";
+  await exec([opener, url], { timeoutMs: 3000 });
+  console.log(`Opening ${url}`);
 }
 
 // -- Init --

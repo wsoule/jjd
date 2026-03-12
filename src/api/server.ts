@@ -2,6 +2,7 @@ import type { Server } from "bun";
 import type { DaemonEngine } from "../engine/state-machine";
 import type { JjOperations } from "../jj/operations";
 import { logger } from "../util/logger";
+import { dashboardHtml } from "./dashboard";
 
 /**
  * Minimal HTTP API for external triggers and status queries.
@@ -44,6 +45,13 @@ export class ApiServer {
     const method = req.method;
 
     try {
+      // GET / — dashboard UI
+      if (method === "GET" && (path === "/" || path === "")) {
+        return new Response(dashboardHtml(this.port), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
       // GET /status
       if (method === "GET" && path === "/status") {
         const daemonStatus = this.engine.getStatus();
