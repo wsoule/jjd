@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, readdirSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, readdirSync, appendFileSync } from "fs";
 import { join, resolve, basename } from "path";
 import { JjOperations } from "./jj/operations";
 import { exec } from "./util/process";
@@ -132,7 +132,10 @@ export class SessionManager {
       JSON.stringify({ id: sanitizedId, linearId, port, bookmark }, null, 2)
     );
 
-    // 6. Start jjd daemon (background by default)
+    // 6. Gitignore jjd's own files so they don't pollute commits
+    ensureWorkspaceGitignore(workspacePath);
+
+    // 7. Start jjd daemon (background by default)
     await this.startDaemon(session, background);
     this.saveSession(session);
 
@@ -490,4 +493,38 @@ export class SessionManager {
 
     throw new Error("Could not find an available port");
   }
+}
+
+// Files jjd writes into a workspace that should never appear in commits
+const WORKSPACE_GITIGNORE_ENTRIES = [
+  ".jjd-session",
+  ".jjd-task-prompt",
+  ".jjd.log",
+  "CLAUDE.md",
+  ".claude/",
+];
+
+/**
+ * Append jjd-owned files to the workspace .gitignore so they don't
+ * show up in `jj st` or get auto-described into commits.
+ * Idempotent — skips entries that are already present.
+ */
+function ensureWorkspaceGitignore(workspacePath: string) {
+  const gitignorePath = join(workspacePath, ".gitignore");
+  const existing = existsSync(gitignorePath)
+    ? readFileSync(gitignorePath, "utf-8")
+    : "";
+
+  const lines = existing.split("\n").map((l) => l.trim());
+  const missing = WORKSPACE_GITIGNORE_ENTRIES.filter((e) => !lines.includes(e));
+  if (missing.length === 0) return;
+
+  const block =
+    (existing.length > 0 && !existing.endsWith("\n") ? "\n" : "") +
+    "# jjd session files\n" +
+    missing.join("\n") +
+    "\n";
+
+  appendFileSync(gitignorePath, block);
+  logger.info(`Updated workspace .gitignore with jjd entries`);
 }
